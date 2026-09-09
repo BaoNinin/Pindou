@@ -97,6 +97,9 @@ import { TRANSPARENT_KEY, transparentColorData } from '../utils/pixelEditingUtil
 import DonationModal from '../components/DonationModal';
 import FocusModePreDownloadModal from '../components/FocusModePreDownloadModal';
 import WelcomeScreen from '../components/WelcomeScreen';
+import InventoryModal from '../components/InventoryModal';
+import StockPrecheckModal from '../components/StockPrecheckModal';
+import { loadInventory, deductInventory, saveInventory, precheckInventory, PrecheckResult } from '../utils/inventoryUtils';
 
 export default function Home() {
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
@@ -182,6 +185,11 @@ export default function Home() {
 
   // 新增：专心拼豆模式进入前下载提醒弹窗
   const [isFocusModePreDownloadModalOpen, setIsFocusModePreDownloadModalOpen] = useState<boolean>(false);
+
+  // 新增：豆库/库存管理（2.0 P1）
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState<boolean>(false);
+  const [isStockPrecheckModalOpen, setIsStockPrecheckModalOpen] = useState<boolean>(false);
+  const [stockPrecheckResult, setStockPrecheckResult] = useState<PrecheckResult | null>(null);
 
   // 新增：横屏设备弹窗状态
 
@@ -516,7 +524,31 @@ export default function Home() {
   // --- Event Handlers ---
 
   // 专心拼豆模式相关处理函数
+  // 2.0 新增：进入前先做一次库存预检，避免拼到一半发现某个颜色不够
   const handleEnterFocusMode = () => {
+    if (colorCounts && Object.keys(colorCounts).length > 0) {
+      const inventory = loadInventory();
+      const result = precheckInventory(colorCounts, inventory);
+      setStockPrecheckResult(result);
+      setIsStockPrecheckModalOpen(true);
+    } else {
+      // 没有颜色统计数据（理论上不会发生），跳过预检直接走原流程
+      setIsFocusModePreDownloadModalOpen(true);
+    }
+  };
+
+  // 库存预检：确认扣减库存并开始
+  const handlePrecheckConfirmDeduct = () => {
+    const inventory = loadInventory();
+    const nextInventory = deductInventory(inventory, colorCounts);
+    saveInventory(nextInventory);
+    setIsStockPrecheckModalOpen(false);
+    setIsFocusModePreDownloadModalOpen(true);
+  };
+
+  // 库存预检：不扣减，直接开始
+  const handlePrecheckProceedWithoutDeduct = () => {
+    setIsStockPrecheckModalOpen(false);
     setIsFocusModePreDownloadModalOpen(true);
   };
 
@@ -2655,6 +2687,17 @@ export default function Home() {
                  </svg>
                  进入专心拼豆模式（AplhaTest）
              </button>
+
+             {/* 豆库/库存管理入口（2.0 新增） */}
+             <button
+                onClick={() => setIsInventoryModalOpen(true)}
+                className={`w-full py-2 px-4 text-xs sm:text-sm rounded-lg transition-all duration-300 flex items-center justify-center gap-2 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+                豆库 / 库存管理
+             </button>
             </div>
         )} {/* ++ End of RENDER Enter Manual Mode Button ++ */}
 
@@ -2803,6 +2846,27 @@ export default function Home() {
         gridDimensions={gridDimensions}
         selectedColorSystem={selectedColorSystem}
       />
+
+      {/* 豆库/库存管理弹窗（2.0 新增） */}
+      <InventoryModal
+        isOpen={isInventoryModalOpen}
+        onClose={() => setIsInventoryModalOpen(false)}
+        colorCounts={colorCounts}
+        activeBeadPalette={activeBeadPalette}
+        selectedColorSystem={selectedColorSystem}
+      />
+
+      {/* 库存预检弹窗（2.0 新增） */}
+      {stockPrecheckResult && (
+        <StockPrecheckModal
+          isOpen={isStockPrecheckModalOpen}
+          onClose={() => setIsStockPrecheckModalOpen(false)}
+          precheckResult={stockPrecheckResult}
+          selectedColorSystem={selectedColorSystem}
+          onConfirmDeduct={handlePrecheckConfirmDeduct}
+          onProceedWithoutDeduct={handlePrecheckProceedWithoutDeduct}
+        />
+      )}
 
       {/* 轻量提示 Toast */}
       {toastMessage && (
