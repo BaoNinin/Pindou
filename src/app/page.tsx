@@ -96,6 +96,7 @@ import { TRANSPARENT_KEY, transparentColorData } from '../utils/pixelEditingUtil
 // 1. 导入新的 DonationModal 组件
 import DonationModal from '../components/DonationModal';
 import FocusModePreDownloadModal from '../components/FocusModePreDownloadModal';
+import WelcomeScreen from '../components/WelcomeScreen';
 
 export default function Home() {
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
@@ -201,6 +202,79 @@ export default function Home() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2000);
   }, []);
+
+  // 新增：首页欢迎界面状态（2.0 首页改版）
+  // 一旦用户进入编辑流程（无论是上传图片、导入 CSV，还是新建空白画布），自动隐藏欢迎界面
+  const [showWelcome, setShowWelcome] = useState<boolean>(true);
+  useEffect(() => {
+    if (originalImageSrc || mappedPixelData) {
+      setShowWelcome(false);
+    }
+  }, [originalImageSrc, mappedPixelData]);
+
+  // 新增：返回首页（欢迎界面）
+  const handleReturnToWelcome = useCallback(() => {
+    if (mappedPixelData) {
+      const confirmed = window.confirm('返回首页将丢失当前未保存的进度，确定要返回吗？');
+      if (!confirmed) return;
+    }
+    setOriginalImageSrc(null);
+    setMappedPixelData(null);
+    setGridDimensions(null);
+    setColorCounts(null);
+    setTotalBeadCount(0);
+    setInitialGridColorKeys(new Set());
+    setIsManualColoringMode(false);
+    setSelectedColor(null);
+    setEditHistory([]);
+    setShowWelcome(true);
+  }, [mappedPixelData]);
+
+  // 新增：空白画布创建（2.0 首页入口之一）
+  const handleCreateBlankCanvas = useCallback((cols: number, rows: number) => {
+    const blankRow: MappedPixel[] = Array.from({ length: cols }, () => ({ ...transparentColorData }));
+    const blankGrid: MappedPixel[][] = Array.from({ length: rows }, () => blankRow.map(cell => ({ ...cell })));
+    const dimensions = { N: cols, M: rows };
+
+    setMappedPixelData(blankGrid);
+    setGridDimensions(dimensions);
+    setColorCounts({});
+    setTotalBeadCount(0);
+    setInitialGridColorKeys(new Set());
+
+    const syntheticImageSrc = generateSyntheticImageFromPixelData(blankGrid, dimensions);
+    setOriginalImageSrc(syntheticImageSrc);
+
+    setGranularity(cols);
+    setGranularityInput(cols.toString());
+    setIsManualColoringMode(true); // 空白画布直接进入手动上色模式，方便用户马上开始绘制
+    setSelectedColor(null);
+    setIsEraseMode(false);
+    setShowWelcome(false);
+  }, []);
+
+  // 新增：首页“空白画布创建”入口的简易尺寸询问（后续可替换为专门的弹窗 UI）
+  const handleCreateBlankClick = useCallback(() => {
+    const input = window.prompt('请输入画布尺寸（格式：宽x高，例如 30x30）：', '30x30');
+    if (!input) return;
+    const match = input.trim().match(/^(\d+)\s*[xX*×]\s*(\d+)$/);
+    if (!match) {
+      alert('格式不正确，请输入类似 "30x30" 的尺寸');
+      return;
+    }
+    const cols = Math.min(200, Math.max(1, parseInt(match[1], 10)));
+    const rows = Math.min(200, Math.max(1, parseInt(match[2], 10)));
+    handleCreateBlankCanvas(cols, rows);
+  }, [handleCreateBlankCanvas]);
+
+  // 新增：社区画廊 / 分享码导入（后端支持尚未上线，先给出明确反馈，避免死链接体验）
+  const handleGalleryClick = useCallback(() => {
+    showToast('社区画廊功能即将上线，敬请期待～');
+  }, [showToast]);
+
+  const handleImportCodeClick = useCallback(() => {
+    showToast('分享码导入功能即将上线，敬请期待～');
+  }, [showToast]);
 
   // 放大镜切换处理函数
   const handleToggleMagnifier = () => {
@@ -1916,7 +1990,31 @@ export default function Home() {
     
     {/* PWA 安装按钮 */}
     <InstallPWA />
-    
+
+    {/* 隐藏的文件输入框：欢迎页和编辑器内的上传入口共用同一个 ref */}
+    <input type="file" accept="image/jpeg, image/png, image/gif, .csv, text/csv, application/csv, text/plain" onChange={handleFileChange} ref={fileInputRef} className="hidden" />
+
+    {/* 2.0 欢迎首页：上传/新建/画廊/分享码导入 4 个入口 */}
+    {showWelcome && (
+      <div className="min-h-screen flex flex-col items-center bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 font-[family-name:var(--font-geist-sans)]">
+        <WelcomeScreen
+          isMounted={isMounted}
+          onUploadClick={triggerFileInput}
+          onCreateBlankClick={handleCreateBlankClick}
+          onGalleryClick={handleGalleryClick}
+          onImportCodeClick={handleImportCodeClick}
+        />
+        {toastMessage && (
+          <div
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-gray-900/90 dark:bg-gray-700/90 text-white text-sm px-4 py-2 rounded-full shadow-lg z-50"
+            style={{ animation: 'toastFadeInOut 2s ease-in-out' }}
+          >
+            {toastMessage}
+          </div>
+        )}
+      </div>
+    )}
+
     {/* ++ 修改：添加 onLoad 回调函数 ++ */}
     <Script
       async
@@ -1961,10 +2059,24 @@ export default function Home() {
       }}
     />
 
+    {!showWelcome && (
+    <>
     {/* Apply dark mode styles to the main container */}
     <div className="min-h-screen p-4 sm:p-6 flex flex-col items-center bg-gradient-to-b from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 font-[family-name:var(--font-geist-sans)] overflow-x-hidden">
       {/* Apply dark mode styles to the header */}
       <header className="w-full md:max-w-4xl text-center mt-6 mb-8 sm:mt-8 sm:mb-10 relative overflow-hidden">
+        {/* 返回首页入口（2.0 新增） */}
+        <button
+          type="button"
+          onClick={handleReturnToWelcome}
+          className="absolute top-2 left-2 z-20 flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors px-2 py-1 rounded-lg hover:bg-white/60 dark:hover:bg-gray-800/60"
+          title="返回首页"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          首页
+        </button>
         {/* Adjust decorative background colors for dark mode */}
         <div className="absolute top-0 left-0 w-48 h-48 bg-blue-100 dark:bg-blue-900 rounded-full opacity-30 dark:opacity-20 blur-3xl"></div>
         <div className="absolute bottom-0 right-0 w-48 h-48 bg-pink-100 dark:bg-pink-900 rounded-full opacity-30 dark:opacity-20 blur-3xl"></div>
@@ -2147,8 +2259,6 @@ export default function Home() {
             </p>
           </div>
         )}
-
-                      <input type="file" accept="image/jpeg, image/png, image/gif, .csv, text/csv, application/csv, text/plain" onChange={handleFileChange} ref={fileInputRef} className="hidden" />
 
         {/* Controls and Output Area */}
         {originalImageSrc && (
@@ -2702,6 +2812,8 @@ export default function Home() {
         </div>
       )}
     </div>
+    </>
+    )}
    </>
   );
 }
